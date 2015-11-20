@@ -1,0 +1,232 @@
+/**
+ * SpeakerContracts is inspired by the Google Script project named 'GoDDaMn' available at this URL:
+ * https://github.com/inviqa/SysAdmin/tree/master/goddamn
+ * and was originaly influenced by 'Generate Google Docs' by Mikko Ohtamaa (http://opensourcehacker.com)
+ * http://opensourcehacker.com/2013/01/21/script-for-generating-google-documents-from-google-spreadsheet-data-source/
+ *
+ * Generate Google Docs based on multiple template documents and data coming from a Google Spreadsheet
+ *
+ * License: MIT
+ *
+ * Copyright 2015 Bertrand Lirette, http://www.bertrandlirette.com
+ *
+ * Modified and Adapted for the Web à Québec conference http://webaquebec.org
+ * Authored by Bertrand Lirette <bertrandlirette@hotmail.com>
+ *
+ * - modified script dubbed SpeakerContracts
+ * - modified script published 
+ * - Added template selection based on data
+ * - changed 'employee' to 'speaker' because this is the use we make of it
+ * - script is meant to be run manually with the function 'generateContracts'
+ */
+
+// Row number from where to fill in the data (starts as 1 = first row)
+// leave this empty to let script pick the ID from the currently selected row of the spreadsheet
+var employee_ID = "";
+
+// Google Doc id from the document template
+// (Get ids from the URL)
+var contrat_inter_en = "1cKXS1-yRdo9XSaGoUI2_zv25gfqDiiV4JRg2xMZexPg";
+var contrat_inter_fr = "1nIzheiS3adUaIDxRTdmCSl2Rz3o1_VEjRHz-QMQ4o8g";
+var contrat_local_en = "1tOyOcff2bERvFBmvCtillavPkG5E5uDJCLiwTi85sHI";
+var contrat_local_fr = "10IT7OeocpVhFX-y7j4ArpPhIZ8WVOww-bmICfTOmOZc";
+
+// In which spreadsheet we have all the speakers data
+var speakers_data = "1PGWzOlnPZ70RRHZMEWLuW9uewjELOmqOtOAjHs8_6ZM";
+
+// In which Google Drive we toss the target documents
+var TARGET_FOLDER = "0B1IKstMuenGCb1VsS3ZURWJ2ZFU";
+
+/**
+ * Return spreadsheet row content as JS array.
+ *
+ * Note: We assume the row ends when we encounter
+ * the first empty cell. This might not be 
+ * sometimes the desired behavior.
+ *
+ * Rows start at 1, not zero based!!!  
+ *
+ */
+function getCurrentRow() {
+  var currentRow = SpreadsheetApp.getActiveSheet().getActiveSelection().getRowIndex();
+  return currentRow;
+}
+
+
+function getRowAsArray(sheet, row) {
+  var dataRange = sheet.getRange(row, 1, 1, 99);
+  var data = dataRange.getValues();
+  var columns = [];
+
+  for (i in data) {
+    var row = data[i];
+
+    Logger.log("Got row", row);
+
+    for(var l=0; l<99; l++) {
+        var col = row[l];
+        // First empty column interrupts
+        if(!col) {
+            break;
+        }
+
+        columns.push(col);
+    }
+  }
+
+  return columns;
+}
+
+/**
+ * Duplicates a Google Apps doc
+ *
+ * @return a new document with a given name from the orignal
+ */
+function createDuplicateDocument(sourceId, name) {
+    var source = DriveApp.getFileById(sourceId);
+    var targetFolder = DriveApp.getFolderById(TARGET_FOLDER);
+    var newFile = source.makeCopy(name, targetFolder);
+
+    /** newFile.addToFolder(targetFolder);*/
+    return DocumentApp.openById(newFile.getId());
+}
+/**
+ * Search a paragraph in the document and replaces it with the generated text 
+ */
+function replaceParagraph(doc, keyword, newText) {
+  var ps = doc.getParagraphs();
+  for(var i=0; i<ps.length; i++) {
+    var p = ps[i];
+    var text = p.getText();
+
+    if(text.indexOf(keyword) >= 0) {
+      p.setText(newText);
+      p.setBold(false);
+      
+    }
+  } 
+}
+
+/**
+ * Search a String in the document and replaces it with the generated newString, and sets it Bold
+ */
+function replaceString(doc, String, newString) {
+
+  var ps = doc.getParagraphs();
+  for(var i=0; i<ps.length; i++) {
+    var p = ps[i];
+    var text = p.getText();
+    //var text = p.editAsText();
+
+    Logger.log("text:" + text);
+
+    if(text.indexOf(String) >= 0) {
+      //look if the String is present in the current paragraph
+      
+
+      //p.editAsText().setFontFamily(b, c, DocumentApp.FontFamily.COMIC_SANS_MS);
+      p.editAsText().replaceText(String, newString);
+      
+      /*
+      // we calculte the length of the string to modify, making sure that is treated like a string and not another kind of object.
+      var newStringLength = newString.toString().length;
+      
+      // if a string has been replaced with a NON empty space, it sets the new string to Bold, 
+      if (newStringLength > 0) {
+        // re-populate the text variable with the updated content of the paragraph
+        text = p.getText();
+        p.editAsText().setBold(text.indexOf(newString), text.indexOf(newString) + newStringLength - 1, true);
+      }
+      */
+    }
+  } 
+}
+
+
+
+/**
+ * Script entry point
+ */
+function generateContracts() {
+
+  // dump file data in variable
+  var data = SpreadsheetApp.openById(speakers_data);
+  
+  // sheet has headers, data starts at line 2
+  var rowNumber = 2;
+
+  // Fetch variable names
+  // they are column names in the spreadsheet
+  var sheet = data.getSheets()[0];
+  var lastRow = sheet.getLastRow();
+  var columns = getRowAsArray(sheet, 1);
+
+  Logger.log("Processing columns:" + columns);
+
+  // loop on all rows
+  for(rowNumber; rowNumber <= lastRow; rowNumber++)
+      {
+        // assign values
+        var speakerData = getRowAsArray(sheet, rowNumber);  
+        Logger.log("Processing data:" + speakerData);
+        
+        // column numbers for first and last names
+        var origin = speakerData[0];
+        var language = speakerData[1];
+        var firstName = speakerData[2];
+        var lastName = speakerData[3];
+        
+        // check origin
+        switch(origin)
+          {
+          //
+            case "local":
+              // check language
+              switch(language)
+                {
+                case "fr":
+                  // duplicate file
+                  var target = createDuplicateDocument(contrat_local_fr, firstName + " " + lastName + " contrat");
+                  break;
+                case "en":
+                  // duplicate file
+                  var target = createDuplicateDocument(contrat_local_en, firstName + " " + lastName + " contrat");
+                  break;
+                }
+              break;
+            //
+            case "international":
+              // check language
+              switch(language)
+                {
+                case "fr":
+                  // duplicate file
+                  var target = createDuplicateDocument(contrat_inter_fr, firstName + " " + lastName + " contract");
+                  break;
+                case "en":
+                  // duplicate file
+                  var target = createDuplicateDocument(contrat_inter_en, firstName + " " + lastName + " contract");
+                  break;
+                }
+              break;
+          }
+
+        Logger.log("Created new document:" + target.getId());
+        
+        // initialize variables
+        var key ="";
+        var text ="";
+        
+        // loop on all columns
+        for(var i=0; i<columns.length; i++)
+          {
+          // TAG forma is :key:
+          var key = ":" + columns[i] + ":"; 
+          var text = speakerData[i] || ""; // No Javascript undefined
+          Logger.log("target:" + target);
+          Logger.log("key:" + key);
+          Logger.log("text:" + text);
+          replaceString(target, key, text);
+          }
+      }
+}
